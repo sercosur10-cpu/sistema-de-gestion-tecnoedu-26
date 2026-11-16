@@ -616,15 +616,18 @@ export function EstadosCuentaModule({
                     key={m.periodo}
                     type="button"
                     onClick={() => setPeriodoAPagar(m.periodo)}
-                    className={`rounded-md border px-2 py-1 text-[11px] font-semibold ${
+                    className={`rounded-md border px-2 py-1 text-[11px] font-semibold transition ${
                       m.periodo === periodoAPagar
                         ? 'border-cyan-400 bg-cyan-500/25 text-white ring-1 ring-cyan-400'
                         : m.estadoMes === 'PAGADO'
                           ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                          : 'border-amber-500/40 bg-amber-500/10 text-amber-300'
+                          : m.estadoMes === 'PARCIAL'
+                            ? 'border-amber-500/40 bg-amber-500/15 text-amber-200'
+                            : 'border-rose-500/40 bg-rose-500/10 text-rose-300'
                     }`}
                   >
                     {m.etiquetaCorta} ({m.periodo}): {m.estadoMes}
+                    {m.estadoMes === 'PARCIAL' && ` (Resta Bs ${m.montoDebe.toFixed(0)})`}
                   </button>
                 ))}
               </div>

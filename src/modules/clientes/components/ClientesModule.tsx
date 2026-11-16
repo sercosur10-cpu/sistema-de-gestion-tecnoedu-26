@@ -1120,6 +1120,27 @@ export function ClientesModule({
                     );
                   }
 
+                  if (item.estadoMes === 'PARCIAL') {
+                    return (
+                      <button
+                        key={item.periodo}
+                        type="button"
+                        onClick={() => setPeriodoMesPago(item.periodo)}
+                        className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${
+                          esSeleccionado
+                            ? 'border-cyan-400 bg-cyan-500/25 text-cyan-100 ring-1 ring-cyan-400'
+                            : 'border-amber-500/40 bg-amber-500/15 text-amber-200 hover:bg-amber-500/25'
+                        }`}
+                      >
+                        <AlertCircle className="h-3 w-3 text-amber-400" />
+                        <span>
+                          {item.etiquetaCorta} ({item.periodo}): PARCIAL (Resta Bs{' '}
+                          {item.montoDebe.toFixed(0)})
+                        </span>
+                      </button>
+                    );
+                  }
+
                   return (
                     <button
                       key={item.periodo}
@@ -1128,7 +1149,7 @@ export function ClientesModule({
                       className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${
                         esSeleccionado
                           ? 'border-cyan-400 bg-cyan-500/25 text-cyan-100 ring-1 ring-cyan-400'
-                          : 'border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20'
+                          : 'border-rose-500/40 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20'
                       }`}
                     >
                       <AlertCircle className="h-3 w-3" />
@@ -1455,10 +1476,12 @@ export function ClientesModule({
                 {extractoClienteFicha.detalleMensual.map((item) => (
                   <div
                     key={item.periodo}
-                    className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5 text-xs ${
+                    className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5 text-xs transition ${
                       item.estadoMes === 'PAGADO'
                         ? 'border-emerald-500/30 bg-emerald-500/5'
-                        : 'border-amber-500/30 bg-amber-500/10'
+                        : item.estadoMes === 'PARCIAL'
+                          ? 'border-amber-500/40 bg-amber-500/10'
+                          : 'border-rose-500/30 bg-rose-500/10'
                     }`}
                   >
                     <div>
@@ -1469,10 +1492,14 @@ export function ClientesModule({
                         <span>— {item.etiquetaLarga}</span>
                         {item.estadoMes === 'PAGADO' ? (
                           <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
-                            CANCELADO
+                            PAGADO
+                          </span>
+                        ) : item.estadoMes === 'PARCIAL' ? (
+                          <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-300">
+                            PAGO PARCIAL
                           </span>
                         ) : (
-                          <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-300">
+                          <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-300">
                             DEBE MES
                           </span>
                         )}
@@ -1488,8 +1515,12 @@ export function ClientesModule({
                             {item.ultimoReciboMes.numero_recibo || 'S/N'}
                           </span>
                         </div>
+                      ) : item.estadoMes === 'PARCIAL' ? (
+                        <div className="mt-0.5 text-amber-200">
+                          Abonado: <span className="font-mono text-white">Bs {item.montoPagado.toFixed(2)}</span> · Saldo pendiente: <span className="font-mono text-amber-300 font-bold">Bs {item.montoDebe.toFixed(2)}</span>
+                        </div>
                       ) : (
-                        <div className="mt-0.5 text-amber-200/80">
+                        <div className="mt-0.5 text-slate-400">
                           Mensualidad pendiente de pago (Tarifa: Bs{' '}
                           {item.montoDebe.toFixed(2)})
                         </div>
@@ -1517,18 +1548,25 @@ export function ClientesModule({
                           )}
                         </>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const cli = clienteFicha;
-                            setClienteFicha(null);
-                            abrirModalCobro(cli, item.periodo);
-                          }}
-                          className="inline-flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-emerald-400"
-                        >
-                          <CreditCard className="h-3.5 w-3.5" />
-                          Cobrar {item.periodo}
-                        </button>
+                        <div className="flex items-center gap-2">
+                          {item.estadoMes === 'PARCIAL' && (
+                            <span className="font-semibold text-amber-300">
+                              Resta: Bs {item.montoDebe.toFixed(2)}
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const cli = clienteFicha;
+                              setClienteFicha(null);
+                              abrirModalCobro(cli, item.periodo);
+                            }}
+                            className="inline-flex items-center gap-1 rounded-lg bg-emerald-500 px-3 py-1.5 text-xs font-bold text-slate-950 hover:bg-emerald-400"
+                          >
+                            <CreditCard className="h-3.5 w-3.5" />
+                            {item.estadoMes === 'PARCIAL' ? 'Completar' : 'Cobrar'} {item.periodo}
+                          </button>
+                        </div>
                       )}
                     </div>
                   </div>

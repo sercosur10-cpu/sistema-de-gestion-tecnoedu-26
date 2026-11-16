@@ -36,7 +36,7 @@ const CODIGOS_DEMO_POR_SUCURSAL: Record<SucursalId, string[]> = {
   BER: ['BER-001', 'BER-002', 'BER-003'],
   TAR: ['TAR-001', 'TAR-002'],
   SCZ: ['SCZ-001', 'SCZ-010'],
-  ROB: ['ROB-001'],
+  ROB: ['ROB-001', 'ROB-006', 'AGC-001', 'AGC-004'],
 };
 
 export function ConsultaClienteModule() {
@@ -55,14 +55,16 @@ export function ConsultaClienteModule() {
 
   const [sucursalSeleccionada, setSucursalSeleccionada] = useState<
     SucursalId | 'TODAS'
-  >(sucursalBloqueada ?? 'BER');
+  >(sucursalBloqueada ?? 'TODAS');
 
   const sucursalEfectiva: SucursalId | 'TODAS' =
     sucursalBloqueada ?? sucursalSeleccionada;
 
   const defaultCodigo =
     codigoUrl ||
-    (sucursalEfectiva !== 'TODAS' ? `${sucursalEfectiva}-001` : 'BER-001');
+    (sucursalBloqueada
+      ? `${sucursalBloqueada}-001`
+      : 'ROB-001');
 
   const [codigoInput, setCodigoInput] = useState(defaultCodigo);
   const [periodoMes, setPeriodoMes] = useState(obtenerPeriodoActualIso());
@@ -98,7 +100,7 @@ export function ConsultaClienteModule() {
         ) ?? null;
     }
 
-    // Verificar que el cliente pertenezca a la sucursal que le corresponde
+    // Verificar si el cliente pertenece a una sucursal restringida para el operador activo
     if (cli && sucFiltro !== 'TODAS' && cli.sucursal_id !== sucFiltro) {
       setCliente(null);
       setCobros([]);
@@ -111,6 +113,9 @@ export function ConsultaClienteModule() {
 
     setCliente(cli);
     if (cli) {
+      if (!sucursalBloqueada && sucursalSeleccionada !== cli.sucursal_id) {
+        setSucursalSeleccionada(cli.sucursal_id);
+      }
       const historial = await listarCobros(cli.codigo_cliente);
       setCobros(historial);
     } else {
@@ -127,9 +132,9 @@ export function ConsultaClienteModule() {
       ? codigoUrl.toUpperCase()
       : sucursalBloqueada
         ? `${sucursalBloqueada}-001`
-        : 'BER-001';
+        : 'ROB-001';
     setCodigoInput(inicial);
-    void consultarCodigo(inicial, sucursalBloqueada ?? sucursalSeleccionada);
+    void consultarCodigo(inicial, sucursalBloqueada ?? 'TODAS');
   }, [codigoUrl, sucursalBloqueada]);
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -140,7 +145,7 @@ export function ConsultaClienteModule() {
   const codigosDemoVisibles =
     sucursalEfectiva !== 'TODAS'
       ? CODIGOS_DEMO_POR_SUCURSAL[sucursalEfectiva]
-      : ['BER-001', 'TAR-001', 'SCZ-001', 'ROB-001'];
+      : ['ROB-001', 'ROB-006', 'AGC-001', 'AGC-004', 'BER-001'];
 
   const extracto = useMemo(() => {
     if (!cliente) return null;
@@ -391,10 +396,14 @@ export function ConsultaClienteModule() {
               {extracto.detalleMensual.map((item) => (
                 <div
                   key={item.periodo}
-                  className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5 text-xs ${
+                  className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3.5 py-2.5 text-xs transition ${
                     item.estadoMes === 'PAGADO'
                       ? 'border-emerald-500/30 bg-emerald-500/10'
-                      : 'border-amber-500/30 bg-amber-500/10'
+                      : item.estadoMes === 'PARCIAL'
+                        ? 'border-amber-500/40 bg-amber-500/15'
+                        : item.estadoMes === 'INACTIVO'
+                          ? 'border-slate-800 bg-slate-900/40 text-slate-400'
+                          : 'border-rose-500/30 bg-rose-500/10'
                   }`}
                 >
                   <div>
@@ -405,10 +414,22 @@ export function ConsultaClienteModule() {
                       <span>— {item.etiquetaLarga}</span>
                       {item.estadoMes === 'PAGADO' ? (
                         <span className="rounded-full bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
-                          CANCELADO
+                          PAGADO
+                        </span>
+                      ) : item.estadoMes === 'PARCIAL' ? (
+                        <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-300">
+                          PAGO PARCIAL
+                        </span>
+                      ) : item.estadoMes === 'INACTIVO' ? (
+                        <span className="rounded-full bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-400">
+                          INACTIVO
+                        </span>
+                      ) : item.estadoMes === 'FUTURO' ? (
+                        <span className="rounded-full bg-cyan-500/20 px-2 py-0.5 text-[10px] font-bold text-cyan-300">
+                          MES PRÓXIMO
                         </span>
                       ) : (
-                        <span className="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-300">
+                        <span className="rounded-full bg-rose-500/20 px-2 py-0.5 text-[10px] font-bold text-rose-300">
                           DEBE MES
                         </span>
                       )}
@@ -424,8 +445,16 @@ export function ConsultaClienteModule() {
                           {item.ultimoReciboMes.numero_recibo || 'S/N'}
                         </span>
                       </div>
+                    ) : item.estadoMes === 'PARCIAL' ? (
+                      <div className="mt-0.5 text-amber-200">
+                        Abonado: <span className="font-mono font-semibold text-white">Bs {item.montoPagado.toFixed(2)}</span> · Saldo pendiente: <span className="font-mono font-semibold text-amber-300">Bs {item.montoDebe.toFixed(2)}</span>
+                      </div>
+                    ) : item.estadoMes === 'INACTIVO' ? (
+                      <div className="mt-0.5 text-slate-500">
+                        Servicio en estado inactivo durante este periodo
+                      </div>
                     ) : (
-                      <div className="mt-0.5 text-amber-200/80">
+                      <div className="mt-0.5 text-slate-400">
                         Mensualidad pendiente de cancelación
                       </div>
                     )}
@@ -436,8 +465,17 @@ export function ConsultaClienteModule() {
                       <span className="text-sm font-bold text-emerald-300">
                         Pagado: Bs {item.montoPagado.toFixed(2)}
                       </span>
+                    ) : item.estadoMes === 'PARCIAL' ? (
+                      <div>
+                        <div className="text-sm font-bold text-amber-300">
+                          Resta: Bs {item.montoDebe.toFixed(2)}
+                        </div>
+                        <div className="text-[10px] text-slate-400">
+                          Abonado: Bs {item.montoPagado.toFixed(2)}
+                        </div>
+                      </div>
                     ) : (
-                      <span className="text-sm font-bold text-amber-300">
+                      <span className="text-sm font-bold text-rose-300">
                         Debe: Bs {item.montoDebe.toFixed(2)}
                       </span>
                     )}

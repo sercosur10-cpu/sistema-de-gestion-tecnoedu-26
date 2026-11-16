@@ -48,12 +48,22 @@ export function obtenerPeriodoActualIso(): string {
   return `${anio}-${mes}`;
 }
 
+export function normalizarPeriodoMes(periodo?: string | null): string | null {
+  if (!periodo) return null;
+  const match = String(periodo).trim().match(/^(\d{4})[-/.](\d{1,2})/);
+  if (!match) return null;
+  const anio = match[1];
+  const mes = match[2].padStart(2, '0');
+  return `${anio}-${mes}`;
+}
+
 export function formatearPeriodoMes(
   periodoMes?: string | null,
   formato: 'corto' | 'largo' = 'largo'
 ): string {
   if (!periodoMes) return '—';
-  const partes = periodoMes.slice(0, 7).split('-');
+  const normalizado = normalizarPeriodoMes(periodoMes) ?? periodoMes.slice(0, 7);
+  const partes = normalizado.split('-');
   if (partes.length !== 2) return periodoMes;
   const [anio, mes] = partes;
   const diccionario =
@@ -63,7 +73,8 @@ export function formatearPeriodoMes(
 }
 
 export function sumarMesesPeriodo(periodoMes: string, delta: number): string {
-  const partes = periodoMes.slice(0, 7).split('-');
+  const normalizado = normalizarPeriodoMes(periodoMes) ?? periodoMes.slice(0, 7);
+  const partes = normalizado.split('-');
   if (partes.length !== 2) return obtenerPeriodoActualIso();
   const anio = parseInt(partes[0], 10);
   const mes = parseInt(partes[1], 10);
@@ -215,11 +226,18 @@ export async function eliminarCobro(
   return { ok: true, error: null };
 }
 
+export type EstadoMesExtracto =
+  | 'PAGADO'
+  | 'PARCIAL'
+  | 'DEBE'
+  | 'INACTIVO'
+  | 'FUTURO';
+
 export interface DetalleMesExtracto {
   periodo: string; // 'AAAA-MM'
   etiquetaLarga: string; // 'Septiembre 2026'
   etiquetaCorta: string; // 'Sep 2026'
-  estadoMes: 'PAGADO' | 'DEBE' | 'INACTIVO' | 'FUTURO';
+  estadoMes: EstadoMesExtracto;
   montoPagado: number;
   montoDebe: number;
   cobrosDelMes: Cobro[];
@@ -244,12 +262,15 @@ export interface EstadoCuentaCliente {
 }
 
 /**
- * Calcula el extracto completo de un cliente:
- * - Si el cliente registra un último mes pagado (ej. '2026-09' aunque su fecha_inicio sea '2020-03-01'),
- *   el sistema toma como base ese último mes pagado hacia adelante para calcular qué meses debe,
- *   evitando arrastrar errores de bases de datos antiguas.
- * - Si no registra ningún pago aún, calcula desde el mes de su fecha_inicio hacia adelante.
- * - Evalúa si el cliente entra en "Lista para Corte" según la Política de Corte vigente (por defecto 2 meses).
+ * Calcula el extracto completo de un cliente cruzando dinámicamente con public.cobros:
+ * - Agrupa los cobros por periodo_mes normalizado ('YYYY-MM') sumando todos los abonos.
+ * - Compara la suma de pagos contra cliente.precio_mensual:
+ *     * suma >= precio_mensual => 'PAGADO' (montoDebe = 0)
+ *     * suma > 0 && suma < precio_mensual => 'PARCIAL' (montoDebe = precio_mensual - suma)
+ *     * suma === 0 => 'DEBE' (montoDebe = precio_mensual)
+ * - Refleja fielmente los pagos históricos migrados desde CSV sin requerir columnas extras en cobros.
+ * - Respeta la regla de saneamiento histórico: si registra meses pagados importados,
+ *   la deuda se calcula a partir del estado de esos meses hacia adelante hasta el mes de corte.
  */
 export function calcularExtractoCliente(
   cliente: Cliente,
@@ -258,82 +279,116 @@ export function calcularExtractoCliente(
   umbralMesesCorteOverride?: number
 ): EstadoCuentaCliente {
   const periodoCorte = (
-    periodoCorteInput || obtenerPeriodoActualIso()
-  ).slice(0, 7);
+    normalizarPeriodoMes(periodoCorteInput) ||
+    (periodoCorteInput || obtenerPeriodoActualIso()).slice(0, 7)
+  );
 
   const umbralMesesCorte =
     umbralMesesCorteOverride ?? obtenerPoliticaCorte().mesesParaCorte ?? 2;
 
+  const precioMensual = Math.max(0, Number(cliente.precio_mensual) || 0);
+
+  // Filtrar cobros del cliente ordenados por periodo y fecha
   const cobrosCliente = todosCobros
     .filter(
       (c) =>
-        c.codigo_cliente.toUpperCase() === cliente.codigo_cliente.toUpperCase()
+        c.codigo_cliente.trim().toUpperCase() ===
+        cliente.codigo_cliente.trim().toUpperCase()
     )
     .sort((a, b) => {
-      if (b.periodo_mes !== a.periodo_mes) {
-        return b.periodo_mes.localeCompare(a.periodo_mes);
-      }
+      const pa = normalizarPeriodoMes(a.periodo_mes) ?? a.periodo_mes;
+      const pb = normalizarPeriodoMes(b.periodo_mes) ?? b.periodo_mes;
+      if (pb !== pa) return pb.localeCompare(pa);
       return b.fecha_pago.localeCompare(a.fecha_pago);
     });
 
-  const periodosConPago = Array.from(
-    new Set(
-      cobrosCliente
-        .filter((c) => Number(c.monto) > 0)
-        .map((c) => c.periodo_mes.slice(0, 7))
-    )
-  ).sort();
+  // Agrupar cobros por periodo normalizado 'YYYY-MM'
+  const sumaPorPeriodo = new Map<string, number>();
+  const cobrosPorPeriodo = new Map<string, Cobro[]>();
+
+  for (const c of cobrosCliente) {
+    const pNorm = normalizarPeriodoMes(c.periodo_mes);
+    if (!pNorm) continue;
+    const monto = Number(c.monto) || 0;
+    sumaPorPeriodo.set(pNorm, (sumaPorPeriodo.get(pNorm) ?? 0) + monto);
+    const list = cobrosPorPeriodo.get(pNorm) ?? [];
+    list.push(c);
+    cobrosPorPeriodo.set(pNorm, list);
+  }
+
+  // Identificar periodos con abono registrado
+  const periodosConAbono = Array.from(sumaPorPeriodo.keys())
+    .filter((p) => (sumaPorPeriodo.get(p) ?? 0) > 0)
+    .sort();
+
+  // Periodos totalmente pagados (suma >= precio_mensual)
+  const periodosCompletados = periodosConAbono.filter((p) => {
+    const pagado = sumaPorPeriodo.get(p) ?? 0;
+    return precioMensual === 0 ? pagado > 0 : pagado >= precioMensual;
+  });
 
   const ultimoPeriodoPagado =
-    periodosConPago[periodosConPago.length - 1] ?? null;
+    periodosCompletados[periodosCompletados.length - 1] ??
+    periodosConAbono[periodosConAbono.length - 1] ??
+    null;
 
-  const mesFechaInicio = (cliente.fecha_inicio || periodoCorte).slice(0, 7);
+  const mesFechaInicio =
+    normalizarPeriodoMes(cliente.fecha_inicio) ||
+    (cliente.fecha_inicio || periodoCorte).slice(0, 7);
 
-  // REGLA CLAVE DE SANEAMIENTO HISTÓRICO:
-  // Si el cliente tiene un último mes pagado registrado (ej. 2026-09),
-  // todos los meses anteriores o iguales a ese último pago se consideran cerrados/saneados,
-  // y la deuda se contabiliza estrictamente desde (ultimoPeriodoPagado + 1 mes) hasta periodoCorte.
-  // Si no tiene pagos registrados, se contabiliza desde mesFechaInicio hasta periodoCorte.
+  // Determinar la lista de periodos a desplegar en el extracto consecutivo
   let listaPeriodos: string[] = [];
 
-  if (ultimoPeriodoPagado) {
-    const siguienteAlUltimoPago = sumarMesesPeriodo(ultimoPeriodoPagado, 1);
+  if (periodosConAbono.length > 0) {
+    // Si tiene pagos importados/registrados, mostramos todos los meses con abono
+    // y los meses posteriores que adeude hasta periodoCorte
+    const ultimoAbono = periodosConAbono[periodosConAbono.length - 1];
+    const siguienteAlUltimo = sumarMesesPeriodo(ultimoAbono, 1);
     const mesesPosteriores =
-      siguienteAlUltimoPago <= periodoCorte
-        ? listarPeriodosRango(siguienteAlUltimoPago, periodoCorte)
+      siguienteAlUltimo <= periodoCorte
+        ? listarPeriodosRango(siguienteAlUltimo, periodoCorte)
         : [];
+
     listaPeriodos = Array.from(
-      new Set([...periodosConPago, ...mesesPosteriores])
+      new Set([...periodosConAbono, ...mesesPosteriores])
     ).sort();
   } else {
+    // Sin pagos: desde su fecha_inicio hasta el periodo de corte
     const fin = mesFechaInicio > periodoCorte ? mesFechaInicio : periodoCorte;
     listaPeriodos = listarPeriodosRango(mesFechaInicio, fin);
   }
 
+  // Evaluar cada periodo individualmente de acuerdo a la suma de cobros y precio mensual
   const detalleMensual: DetalleMesExtracto[] = listaPeriodos.map((periodo) => {
-    const cobrosDelMes = cobrosCliente.filter(
-      (c) => c.periodo_mes.slice(0, 7) === periodo
-    );
-    const montoPagado = cobrosDelMes.reduce(
-      (acc, item) => acc + Number(item.monto),
-      0
-    );
-    const tienePago = cobrosDelMes.length > 0 && montoPagado > 0;
+    const cobrosDelMes = cobrosPorPeriodo.get(periodo) ?? [];
+    const montoPagado = sumaPorPeriodo.get(periodo) ?? 0;
     const esFuturo = periodo > periodoCorte;
 
-    let estadoMes: DetalleMesExtracto['estadoMes'];
-    if (tienePago) {
+    let estadoMes: EstadoMesExtracto;
+    let montoDebe = 0;
+
+    if (precioMensual === 0) {
+      estadoMes = montoPagado > 0 ? 'PAGADO' : 'DEBE';
+      montoDebe = 0;
+    } else if (montoPagado >= precioMensual) {
       estadoMes = 'PAGADO';
+      montoDebe = 0;
+    } else if (montoPagado > 0) {
+      estadoMes = 'PARCIAL';
+      montoDebe =
+        cliente.estado === 'INACTIVO'
+          ? 0
+          : Math.max(0, precioMensual - montoPagado);
     } else if (cliente.estado === 'INACTIVO') {
       estadoMes = 'INACTIVO';
+      montoDebe = 0;
     } else if (esFuturo) {
       estadoMes = 'FUTURO';
+      montoDebe = 0;
     } else {
       estadoMes = 'DEBE';
+      montoDebe = precioMensual;
     }
-
-    const montoDebe =
-      estadoMes === 'DEBE' ? Number(cliente.precio_mensual) : 0;
 
     return {
       periodo,
@@ -348,27 +403,32 @@ export function calcularExtractoCliente(
   });
 
   const mesesPagados = detalleMensual.filter((m) => m.estadoMes === 'PAGADO');
-  const mesesQueDebe = detalleMensual.filter((m) => m.estadoMes === 'DEBE');
 
-  // Determinar el siguiente mes consecutivo que le corresponde pagar:
-  // 1. Si tiene un último mes pagado, el siguiente mes que le toca pagar es siempre (ultimoPeriodoPagado + 1 mes),
-  //    que coincide con mesesQueDebe[0] cuando tiene deuda acumulada.
-  // 2. Si no tiene pagos registrados, empieza en mesFechaInicio.
+  // Meses que adeuda hasta el periodo de corte (incluye parciales y no pagados)
+  const mesesQueDebe = detalleMensual.filter(
+    (m) =>
+      (m.estadoMes === 'DEBE' || m.estadoMes === 'PARCIAL') &&
+      m.periodo <= periodoCorte
+  );
+
+  // Determinar el próximo mes consecutivo que le corresponde pagar:
+  // 1. Si adeuda meses (o tiene un saldo parcial pendiente), el primero de ellos.
+  // 2. Si no adeuda nada hasta el corte, el mes inmediatamente siguiente al último corte/pago.
   let proximoMesAPagar: string;
-  if (ultimoPeriodoPagado) {
-    proximoMesAPagar = sumarMesesPeriodo(ultimoPeriodoPagado, 1);
-  } else if (mesesQueDebe.length > 0) {
+  if (mesesQueDebe.length > 0) {
     proximoMesAPagar = mesesQueDebe[0].periodo;
+  } else if (ultimoPeriodoPagado) {
+    proximoMesAPagar = sumarMesesPeriodo(ultimoPeriodoPagado, 1);
   } else {
-    proximoMesAPagar = mesFechaInicio;
+    proximoMesAPagar = sumarMesesPeriodo(periodoCorte, 1);
   }
 
   const totalPagadoPeriodo = cobrosCliente
-    .filter((c) => c.periodo_mes.slice(0, 7) === periodoCorte)
-    .reduce((acc, item) => acc + Number(item.monto), 0);
+    .filter((c) => normalizarPeriodoMes(c.periodo_mes) === periodoCorte)
+    .reduce((acc, item) => acc + (Number(item.monto) || 0), 0);
 
   const totalPagadoHistorico = cobrosCliente.reduce(
-    (acc, item) => acc + Number(item.monto),
+    (acc, item) => acc + (Number(item.monto) || 0),
     0
   );
 
