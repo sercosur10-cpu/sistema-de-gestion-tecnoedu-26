@@ -1,9 +1,9 @@
 import { supabase, isSupabaseConfigured } from '@/lib/supabase/client';
 import type {
   Cliente,
-  Database,
-  EstadoCliente,
-  SucursalId,
+    Database,
+    EstadoCliente,
+    SucursalId,
 } from '@/lib/supabase/database.types';
 import {
   INITIAL_CLIENTES,

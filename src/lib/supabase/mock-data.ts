@@ -4,13 +4,13 @@ export const INITIAL_SUCURSALES: Sucursal[] = [
   {
     id: 'BER',
     nombre: 'Bermejo',
-    telefono_soporte: '59171110001',
+    telefono_soporte: '59172906807',
     activo: true,
   },
   {
     id: 'TAR',
     nombre: 'Tarija',
-    telefono_soporte: '59171110002',
+    telefono_soporte: '59167390991',
     activo: true,
   },
   {
@@ -22,7 +22,7 @@ export const INITIAL_SUCURSALES: Sucursal[] = [
   {
     id: 'ROB',
     nombre: 'Roboré',
-    telefono_soporte: '59171110004',
+    telefono_soporte: '59167671661',
     activo: true,
   },
 ];

@@ -239,10 +239,19 @@ export function SucursalWorkspace({ sucursalId }: SucursalWorkspaceProps) {
               <MapPin className="h-3.5 w-3.5 text-cyan-400" />
               {meta.departamento}
             </span>
-            <span className="inline-flex items-center gap-1">
+            <a
+              href={`https://wa.me/${meta.telefonoSoporteDefault}?text=${encodeURIComponent(
+                `Hola Soporte TecnoEdu Agencia ${meta.nombre}, me comunico desde el sistema.`
+              )}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 rounded-md border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 font-medium text-emerald-300 transition hover:bg-emerald-500/20"
+              title={`Abrir WhatsApp de Oficina ${meta.nombre}`}
+            >
               <Phone className="h-3.5 w-3.5 text-emerald-400" />
-              Soporte: +{meta.telefonoSoporteDefault}
-            </span>
+              <span>WhatsApp Oficina: +{meta.telefonoSoporteDefault}</span>
+              <ExternalLink className="h-2.5 w-2.5" />
+            </a>
             <a
               href="https://tecnoedu.com.bo"
               target="_blank"
@@ -273,7 +282,7 @@ export function SucursalWorkspace({ sucursalId }: SucursalWorkspaceProps) {
       </div>
 
       {/* KPIs Operativos de la Agencia */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
           <div className="text-xs text-slate-400">
             Padrón Agencia {meta.nombre}
@@ -316,28 +325,6 @@ export function SucursalWorkspace({ sucursalId }: SucursalWorkspaceProps) {
           </div>
           <div className="mt-1.5 text-xs text-slate-400">
             {stockEquiposSucursal} en Stock · {tecnicosSucursal.length} técnicos
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
-          <div className="text-xs text-slate-400">
-            Facturación Mensual Activa
-          </div>
-          <div className="mt-1 text-2xl font-extrabold text-cyan-300">
-            Bs {facturacionMensualActiva.toFixed(2)}
-          </div>
-          <div className="mt-1.5 text-xs text-slate-500">
-            Suma de {activos.length} servicios activos
-          </div>
-        </div>
-
-        <div className="rounded-xl border border-slate-800 bg-slate-900/70 p-4">
-          <div className="text-xs text-slate-400">Total Cobros Registrados</div>
-          <div className="mt-1 text-2xl font-extrabold text-emerald-300">
-            Bs {totalRecaudadoSucursal.toFixed(2)}
-          </div>
-          <div className="mt-1.5 text-xs text-slate-500">
-            {cobrosSucursal.length} recibos emitidos en {meta.id}
           </div>
         </div>
       </div>
