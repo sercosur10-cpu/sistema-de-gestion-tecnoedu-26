@@ -105,6 +105,116 @@ export function listarPeriodosRango(
   return resultado;
 }
 
+export interface ResumenCajaMetodos {
+  total: number;
+  efectivo: number;
+  qr: number;
+  transferencia: number;
+  totalLogica: number; // QR + Transferencia
+  totalFisica: number; // Efectivo
+  cantidadTotal: number;
+  cantidadEfectivo: number;
+  cantidadQr: number;
+  cantidadTransferencia: number;
+}
+
+export function calcularResumenCaja(cobros: Cobro[]): ResumenCajaMetodos {
+  let efectivo = 0;
+  let qr = 0;
+  let transferencia = 0;
+  let cantidadEfectivo = 0;
+  let cantidadQr = 0;
+  let cantidadTransferencia = 0;
+
+  for (const c of cobros) {
+    const monto = Number(c.monto) || 0;
+    if (c.metodo_pago === 'EFECTIVO') {
+      efectivo += monto;
+      cantidadEfectivo++;
+    } else if (c.metodo_pago === 'QR') {
+      qr += monto;
+      cantidadQr++;
+    } else if (c.metodo_pago === 'TRANSFERENCIA') {
+      transferencia += monto;
+      cantidadTransferencia++;
+    }
+  }
+
+  const total = efectivo + qr + transferencia;
+  const totalLogica = qr + transferencia;
+  const totalFisica = efectivo;
+  const cantidadTotal = cantidadEfectivo + cantidadQr + cantidadTransferencia;
+
+  return {
+    total,
+    efectivo,
+    qr,
+    transferencia,
+    totalLogica,
+    totalFisica,
+    cantidadTotal,
+    cantidadEfectivo,
+    cantidadQr,
+    cantidadTransferencia,
+  };
+}
+
+export interface DesgloseDiarioMes {
+  fecha: string; // YYYY-MM-DD
+  fechaFormateada: string; // DD/MM/YYYY
+  diaSemana: string;
+  cobros: Cobro[];
+  resumen: ResumenCajaMetodos;
+}
+
+const DIAS_SEMANA = [
+  'Domingo',
+  'Lunes',
+  'Martes',
+  'Miércoles',
+  'Jueves',
+  'Viernes',
+  'Sábado',
+];
+
+export function agruparCobrosPorDia(cobros: Cobro[]): DesgloseDiarioMes[] {
+  const mapa = new Map<string, Cobro[]>();
+  for (const c of cobros) {
+    const f = (c.fecha_pago || '').slice(0, 10);
+    if (!f) continue;
+    const list = mapa.get(f) ?? [];
+    list.push(c);
+    mapa.set(f, list);
+  }
+
+  const fechasOrdenadas = Array.from(mapa.keys()).sort((a, b) =>
+    b.localeCompare(a)
+  );
+
+  return fechasOrdenadas.map((fecha) => {
+    const cobrosDelDia = mapa.get(fecha) ?? [];
+    const partes = fecha.split('-');
+    let diaSemana = '';
+    if (partes.length === 3) {
+      const anio = parseInt(partes[0], 10);
+      const mes = parseInt(partes[1], 10) - 1;
+      const dia = parseInt(partes[2], 10);
+      const d = new Date(anio, mes, dia);
+      diaSemana = DIAS_SEMANA[d.getDay()] ?? '';
+    }
+    return {
+      fecha,
+      fechaFormateada:
+        partes.length === 3
+          ? `${partes[2]}/${partes[1]}/${partes[0]}`
+          : fecha,
+      diaSemana,
+      cobros: cobrosDelDia,
+      resumen: calcularResumenCaja(cobrosDelDia),
+    };
+  });
+}
+
 function getLocalCobros(): Cobro[] {
   if (typeof window === 'undefined') return INITIAL_COBROS;
   try {
