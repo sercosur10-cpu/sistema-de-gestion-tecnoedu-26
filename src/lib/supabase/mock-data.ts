@@ -16,7 +16,7 @@ export const INITIAL_SUCURSALES: Sucursal[] = [
   {
     id: 'SCZ',
     nombre: 'Santa Cruz',
-    telefono_soporte: '59171110003',
+    telefono_soporte: '59164584844',
     activo: true,
   },
   {

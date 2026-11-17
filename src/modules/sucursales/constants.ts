@@ -28,7 +28,7 @@ export const SUCURSALES_META: Record<SucursalId, SucursalMeta> = {
     nombre: 'Santa Cruz',
     departamento: 'Santa Cruz de la Sierra',
     colorBadge: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
-    telefonoSoporteDefault: '59171110003',
+    telefonoSoporteDefault: '59164584844',
   },
   ROB: {
     id: 'ROB',
