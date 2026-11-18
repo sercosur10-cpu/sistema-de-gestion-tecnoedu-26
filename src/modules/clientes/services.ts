@@ -48,21 +48,38 @@ export async function listarClientes(
     return lista;
   }
 
-  let query = supabase
-    .from('clientes')
-    .select('*')
-    .order('codigo_cliente', { ascending: true });
+  // Traer todos los registros con paginación automática superando el límite de 1000 de Supabase PostgREST
+  const todos: Cliente[] = [];
+  const pageSize = 1000;
+  let page = 0;
 
-  if (sucursalFiltro && sucursalFiltro !== 'TODAS') {
-    query = query.eq('sucursal_id', sucursalFiltro);
+  while (true) {
+    let query = supabase
+      .from('clientes')
+      .select('*')
+      .order('codigo_cliente', { ascending: true })
+      .range(page * pageSize, (page + 1) * pageSize - 1);
+
+    if (sucursalFiltro && sucursalFiltro !== 'TODAS') {
+      query = query.eq('sucursal_id', sucursalFiltro);
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.error('Error al consultar clientes en Supabase:', error.message);
+      break;
+    }
+    if (!data || data.length === 0) {
+      break;
+    }
+    todos.push(...data);
+    if (data.length < pageSize) {
+      break;
+    }
+    page++;
   }
 
-  const { data, error } = await query;
-  if (error) {
-    console.error('Error al consultar clientes en Supabase:', error.message);
-    return [];
-  }
-  return data ?? [];
+  return todos;
 }
 
 export async function buscarClientePorCodigo(

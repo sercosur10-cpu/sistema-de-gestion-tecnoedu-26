@@ -255,22 +255,39 @@ export async function listarCobros(codigoCliente?: string): Promise<Cobro[]> {
     });
   }
 
-  let query = supabase
-    .from('cobros')
-    .select('*')
-    .order('periodo_mes', { ascending: false })
-    .order('fecha_pago', { ascending: false });
+  // Traer todos los cobros con paginación automática superando el límite de 1000 de Supabase PostgREST
+  const todos: Cobro[] = [];
+  const pageSize = 1000;
+  let page = 0;
 
-  if (codigoCliente) {
-    query = query.ilike('codigo_cliente', codigoCliente.trim().toUpperCase());
+  while (true) {
+    let query = supabase
+      .from('cobros')
+      .select('*')
+      .order('periodo_mes', { ascending: false })
+      .order('fecha_pago', { ascending: false })
+      .range(page * pageSize, (page + 1) * pageSize - 1);
+
+    if (codigoCliente) {
+      query = query.ilike('codigo_cliente', codigoCliente.trim().toUpperCase());
+    }
+
+    const { data, error } = await query;
+    if (error) {
+      console.error('Error al consultar cobros en Supabase:', error.message);
+      break;
+    }
+    if (!data || data.length === 0) {
+      break;
+    }
+    todos.push(...data);
+    if (data.length < pageSize) {
+      break;
+    }
+    page++;
   }
 
-  const { data, error } = await query;
-  if (error) {
-    console.error('Error al consultar cobros en Supabase:', error.message);
-    return [];
-  }
-  return data ?? [];
+  return todos;
 }
 
 export type NuevoCobroInput = Database['public']['Tables']['cobros']['Insert'];
